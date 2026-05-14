@@ -234,7 +234,7 @@ async function main() {
 
   // Category rotation - read last used index from file
   const fs = await import('fs');
-  const rotationFile = `${process.env.HOME}/seo-automation/.blog_rotation`;
+  const rotationFile = `./.blog_rotation`;
   let lastIndex = 0;
   try {
     lastIndex = parseInt(fs.default.readFileSync(rotationFile, 'utf8').trim()) || 0;
