@@ -1,0 +1,38 @@
+name: Blog Automation
+
+on:
+  schedule:
+    - cron: '0 10 * * *'  # Her gün 10:00 UTC (06:00 EST)
+    - cron: '0 16 * * *'  # Her gün 16:00 UTC (12:00 EST)
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Get Shopify token
+        id: token
+        run: |
+          TOKEN=$(curl -s -X POST "https://${{ secrets.SHOPIFY_STORE }}/admin/oauth/access_token" \
+            -H "Content-Type: application/json" \
+            -d "{\"client_id\":\"${{ secrets.SHOPIFY_CLIENT_ID }}\",\"client_secret\":\"${{ secrets.SHOPIFY_CLIENT_SECRET }}\",\"grant_type\":\"client_credentials\"}" \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])")
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+
+      - name: Run blog automation
+        env:
+          SHOPIFY_STORE: ${{ secrets.SHOPIFY_STORE }}
+          SHOPIFY_TOKEN: ${{ steps.token.outputs.token }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+        run: node blog_automation.js 1
