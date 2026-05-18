@@ -232,15 +232,7 @@ async function main() {
   const COUNT = parseInt(process.argv[2]) || 2;
   console.log(`\n🚀 Blog Automation — Publishing ${COUNT} article(s)\n`);
 
-  // Category rotation - read last used index from file
-  const fs = await import('fs');
-  const rotationFile = `./.blog_rotation`;
-  let lastIndex = 0;
-  try {
-    lastIndex = parseInt(fs.default.readFileSync(rotationFile, 'utf8').trim()) || 0;
-  } catch(e) { lastIndex = 0; }
-
-  // Group topics by category
+  // Category rotation based on day of year — no file needed
   const categories = [
     ARTICLE_TOPICS.filter(t => t.collection.includes('loafer')),
     ARTICLE_TOPICS.filter(t => t.collection.includes('boot') || t.collection.includes('knee')),
@@ -252,15 +244,15 @@ async function main() {
     ARTICLE_TOPICS.filter(t => t.collection.includes('bridal') || t.collection.includes('lace') || t.collection.includes('pearl') || t.collection.includes('velvet') || t.collection.includes('ribbon') || t.collection.includes('strappy')),
   ].filter(cat => cat.length > 0);
 
-  // Pick from next category in rotation
-  const catIndex = lastIndex % categories.length;
+  // Use day of year + hour to determine category (2 runs per day = different categories)
+  const now = new Date();
+  const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+  const runSlot = now.getUTCHours() >= 14 ? 1 : 0; // morning=0, afternoon=1
+  const catIndex = (dayOfYear * 2 + runSlot) % categories.length;
   const category = categories[catIndex];
   const shuffledCat = [...category].sort(() => Math.random() - 0.5);
   const toPublish = shuffledCat.slice(0, COUNT);
-
-  // Save next index
-  fs.default.writeFileSync(rotationFile, String(catIndex + 1));
-  console.log(`📂 Category rotation: ${catIndex + 1}/${categories.length} (${toPublish[0]?.collection || '?'})`);
+  console.log(`📂 Category: ${catIndex + 1}/${categories.length} (${toPublish[0]?.collection || '?'})`);
 
   let success = 0;
 
