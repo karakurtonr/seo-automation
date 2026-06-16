@@ -126,13 +126,20 @@ Rules:
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-sonnet-4-6',  // ✅ fixed model name
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }],
     }),
   });
 
   const data = await res.json();
+
+  // ✅ Handle API errors gracefully
+  if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
+    console.log('  ❌ Claude API error:', JSON.stringify(data));
+    throw new Error(`Claude API returned no content. Type: ${data.type}, Error: ${data.error?.message || 'unknown'}`);
+  }
+
   const text = data.content[0].text.trim().replace(/```json|```/g, '').trim();
   try {
     return JSON.parse(text);
