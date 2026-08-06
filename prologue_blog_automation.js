@@ -1,0 +1,309 @@
+import fetch from 'node-fetch';
+
+const STORE = process.env.PROLOGUE_STORE;         // prologueshoes.myshopify.com
+const CLIENT_ID = process.env.PROLOGUE_CLIENT_ID;
+const CLIENT_SECRET = process.env.PROLOGUE_CLIENT_SECRET;
+const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+const BLOG_ID = '93033070707';                     // "The Edit" blog
+
+let TOKEN = null; // filled at runtime via client_credentials grant
+
+// Exchange client ID + secret for a fresh access token (valid ~24h)
+async function getAccessToken() {
+  const res = await fetch(`https://${STORE}/admin/oauth/access_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      grant_type: 'client_credentials',
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET,
+    }),
+  });
+  const data = await res.json();
+  if (!data.access_token) {
+    console.log('❌ Token exchange failed:', JSON.stringify(data));
+    throw new Error('Could not obtain access token from client credentials.');
+  }
+  console.log('🔑 Access token obtained.');
+  return data.access_token;
+}
+
+const ARTICLE_TOPICS = [
+  { title: "How to Style Women's Loafers for Every Occasion", keyword: "women's loafers", collection: "loafers" },
+  { title: "Loafers for Work: The Office-Ready Guide", keyword: "loafers women work", collection: "loafers" },
+  { title: "How to Break In New Loafers Without the Pain", keyword: "loafers women", collection: "loafers" },
+  { title: "The Best Women's Loafers to Wear With Jeans", keyword: "loafers with jeans women", collection: "loafers" },
+
+  { title: "How to Style Ankle Boots: 5 Outfits That Always Work", keyword: "ankle boots women", collection: "ankle-boots" },
+  { title: "Ankle Boots vs Chelsea Boots: What's the Difference?", keyword: "ankle boots women", collection: "ankle-boots" },
+  { title: "The Best Ankle Boots for Women in 2026", keyword: "ankle boots women 2026", collection: "ankle-boots" },
+
+  { title: "Knee High Boots: The Complete Style Guide for Women", keyword: "knee high boots women", collection: "knee-high-boots" },
+  { title: "How to Wear Knee High Boots With Every Outfit", keyword: "knee high boots women", collection: "knee-high-boots" },
+
+  { title: "Leather-Look Sneakers for Women: The Everyday Staple", keyword: "sneakers women", collection: "sneakers" },
+  { title: "How to Style White Sneakers With Any Outfit", keyword: "white sneakers women", collection: "sneakers" },
+  { title: "The Best Comfortable Sneakers for All-Day Wear", keyword: "comfortable sneakers women", collection: "sneakers" },
+
+  { title: "Pumps 101: How to Choose the Right Heel Height", keyword: "pumps women", collection: "pumps" },
+  { title: "How to Walk in Pumps Comfortably: A Practical Guide", keyword: "comfortable pumps women", collection: "pumps" },
+  { title: "The Best Black Pumps for Women: A Complete Guide", keyword: "black pumps women", collection: "pumps" },
+
+  { title: "Slide Sandals: The Summer Essential You Need", keyword: "slide sandals women", collection: "sandals" },
+  { title: "How to Style Sandals for Summer 2026", keyword: "sandals women summer", collection: "sandals" },
+
+  { title: "Wedge Sandals: The Most Comfortable Heel You Can Wear", keyword: "wedge sandals women", collection: "wedges-and-sandals" },
+  { title: "How to Style Wedges for Day and Night", keyword: "wedges women", collection: "wedges-and-sandals" },
+
+  { title: "Why Ballet Flats Are Having a Major Moment in 2026", keyword: "ballet flats women", collection: "flats" },
+  { title: "How to Style Flats: From Office to Weekend", keyword: "flats women outfit", collection: "flats" },
+  { title: "The Best Flats for Women Who Are on Their Feet All Day", keyword: "comfortable flats women", collection: "flats" },
+
+  { title: "Mary Jane Flats Are Back: How to Wear Them in 2026", keyword: "mary jane flats women", collection: "mary-jane-flats" },
+];
+
+async function getCollectionProducts(collectionHandle) {
+  const res = await fetch(
+    `https://${STORE}/admin/api/2024-01/smart_collections.json?handle=${collectionHandle}&fields=id,title,handle`,
+    { headers: { 'X-Shopify-Access-Token': TOKEN } }
+  );
+  const data = await res.json();
+  const collections = data.smart_collections || [];
+  if (collections.length === 0) {
+    console.log(`  ⚠️  Collection "${collectionHandle}" not found as smart_collection`);
+    return [];
+  }
+  const collectionId = collections[0].id;
+
+  const prodRes = await fetch(
+    `https://${STORE}/admin/api/2024-01/collections/${collectionId}/products.json?limit=20&fields=id,handle`,
+    { headers: { 'X-Shopify-Access-Token': TOKEN } }
+  );
+  const prodData = await prodRes.json();
+  const productList = prodData.products || [];
+  if (productList.length === 0) return [];
+
+  const shuffled = [...productList].sort(() => Math.random() - 0.5);
+  const selected = shuffled.slice(0, 10);
+
+  const fullProducts = await Promise.all(
+    selected.map(async p => {
+      const r = await fetch(
+        `https://${STORE}/admin/api/2024-01/products/${p.id}.json?fields=title,handle,images,variants`,
+        { headers: { 'X-Shopify-Access-Token': TOKEN } }
+      );
+      const d = await r.json();
+      return d.product;
+    })
+  );
+
+  return fullProducts
+    .filter(p => p && p.images && p.images.length > 0)
+    .map(p => ({
+      title: p.title,
+      url: `/products/${p.handle}`,
+      image: p.images[0].src,
+      price: parseFloat(p.variants?.[0]?.price || 0).toFixed(2),
+    }));
+}
+
+async function generateArticle(topic, products) {
+  const prompt = `You are a content writer for Prologue Shoes, a women's footwear brand. Focus on the shoes themselves — style, comfort, fit, how to wear them. Price range $59-$199.
+
+Write a blog article for our style blog. Target keyword: "${topic.keyword}"
+Article title: "${topic.title}"
+
+Rules:
+- Warm, knowledgeable tone — like a stylish friend giving real advice
+- 600-700 words total
+- 3-4 H2 sections, naturally varied headings
+- Focus on the footwear: styling, comfort, fit, occasions, outfit pairings
+- Reference specific colors naturally (cognac, taupe, black, beige, ivory)
+- DO NOT use: timeless, chic, elevate, effortless, sophisticated, stunning, luxurious, perfect
+- DO NOT focus on veganism, sustainability, or eco messaging — keep the focus on the shoes
+- End with a short paragraph that leads naturally to shopping
+- HTML using only <p> and <h2> tags
+- Return ONLY valid JSON, no markdown:
+
+{
+  "seo_title": "max 60 chars, keyword-rich",
+  "seo_description": "max 155 chars, ends with Shop now.",
+  "tags": ["5-7 relevant tags"],
+  "body_html": "full article HTML with <h2> and <p> tags only, no intro heading"
+}`;
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+
+  const data = await res.json();
+
+  if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
+    console.log('  ❌ Claude API error:', JSON.stringify(data));
+    throw new Error(`Claude API returned no content. Type: ${data.type}, Error: ${data.error?.message || 'unknown'}`);
+  }
+
+  const text = data.content[0].text.trim().replace(/```json|```/g, '').trim();
+  try {
+    return JSON.parse(text);
+  } catch(e) {
+    console.log('  ❌ JSON parse error. Raw:', text.substring(0, 300));
+    throw e;
+  }
+}
+
+function makeRow(prods) {
+  return `<div style="display:flex;gap:12px;margin:28px 0;">` +
+    prods.map(p => `
+    <div style="flex:1;min-width:0;">
+      <a href="${p.url}" style="text-decoration:none;color:inherit;display:block;">
+        <img src="${p.image}" alt="${p.title}" style="width:100%;aspect-ratio:1;object-fit:cover;margin-bottom:6px;" />
+        <p style="margin:0 0 2px 0;font-size:11px;font-weight:500;line-height:1.3;">${p.title}</p>
+        <p style="margin:0;font-size:11px;color:#666;">$${p.price}</p>
+      </a>
+    </div>`).join('') + `</div>`;
+}
+
+function buildBodyHtml(articleData, products, collectionHandle) {
+  let body = articleData.body_html;
+
+  if (products.length > 0) {
+    const shuffled = [...products].sort(() => Math.random() - 0.5);
+    let h2Count = 0;
+    let insertPos = -1;
+    let searchFrom = 0;
+    while (h2Count < 3) {
+      const pos = body.indexOf('</h2>', searchFrom);
+      if (pos === -1) break;
+      h2Count++;
+      if (h2Count === 3) {
+        const nextH2 = body.indexOf('<h2>', pos + 5);
+        insertPos = nextH2 === -1 ? body.length : nextH2;
+      }
+      searchFrom = pos + 5;
+    }
+
+    if (insertPos !== -1) {
+      const midRow = makeRow(shuffled.slice(0, 3));
+      body = body.slice(0, insertPos) + midRow + body.slice(insertPos);
+    }
+
+    const endRow = `<div style="margin:48px 0 32px 0;border-top:1px solid #eee;padding-top:32px;"><p style="font-weight:700;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;margin:0 0 20px 0;">Shop This Collection</p>` + makeRow(shuffled.slice(0, 5)) + `</div>`;
+    body += endRow;
+  }
+
+  const ctaBlock = `<div style="background-color:#1a1a1a;padding:32px;margin:40px 0;text-align:center;"><p style="color:#ffffff;font-size:18px;font-weight:600;margin:0 0 8px 0;">Shop the Collection</p><p style="color:#c9a97a;margin:0 0 20px 0;">Free shipping US, UK & Europe</p><a href="/collections/${collectionHandle}" style="background-color:#c9a97a;color:#1a1a1a;padding:14px 32px;text-decoration:none;font-weight:600;display:inline-block;">Shop Now →</a></div>`;
+
+  return body + ctaBlock;
+}
+
+async function publishArticle(title, bodyHtml, seoTitle, seoDescription, tags, heroImageUrl) {
+  const articlePayload = {
+    title,
+    body_html: bodyHtml,
+    published: true,
+    metafields_global_title_tag: seoTitle,
+    metafields_global_description_tag: seoDescription,
+    tags: tags.join(', '),
+  };
+  if (heroImageUrl) {
+    articlePayload.image = { src: heroImageUrl };
+  }
+
+  const res = await fetch(
+    `https://${STORE}/admin/api/2024-01/blogs/${BLOG_ID}/articles.json`,
+    {
+      method: 'POST',
+      headers: {
+        'X-Shopify-Access-Token': TOKEN,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ article: articlePayload }),
+    }
+  );
+  const data = await res.json();
+  if (!data.article) {
+    console.log(`  ❌ Shopify error:`, JSON.stringify(data));
+  }
+  return data.article;
+}
+
+async function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms));
+}
+
+async function main() {
+  const COUNT = parseInt(process.argv[2]) || 2;
+  console.log(`\n🚀 Prologue Blog Automation — Publishing ${COUNT} article(s)\n`);
+
+  // Get a fresh access token before doing anything
+  TOKEN = await getAccessToken();
+
+  const categories = [
+    ARTICLE_TOPICS.filter(t => t.collection.includes('loafer')),
+    ARTICLE_TOPICS.filter(t => t.collection.includes('ankle') || t.collection.includes('knee')),
+    ARTICLE_TOPICS.filter(t => t.collection.includes('sneaker')),
+    ARTICLE_TOPICS.filter(t => t.collection.includes('pump')),
+    ARTICLE_TOPICS.filter(t => t.collection.includes('sandal') || t.collection.includes('wedge')),
+    ARTICLE_TOPICS.filter(t => t.collection.includes('flat')),
+  ].filter(cat => cat.length > 0);
+
+  const now = new Date();
+  const dayOfYear = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000);
+  const runSlot = now.getUTCHours() >= 14 ? 1 : 0;
+  const catIndex = (dayOfYear * 2 + runSlot) % categories.length;
+  const category = categories[catIndex];
+  const shuffledCat = [...category].sort(() => Math.random() - 0.5);
+  const toPublish = shuffledCat.slice(0, COUNT);
+  console.log(`📂 Category: ${catIndex + 1}/${categories.length} (${toPublish[0]?.collection || '?'})`);
+
+  let success = 0;
+
+  for (const topic of toPublish) {
+    console.log(`\n📝 Writing: "${topic.title}"`);
+    try {
+      console.log(`  🛍️  Fetching products from [${topic.collection}]...`);
+      const products = await getCollectionProducts(topic.collection);
+      console.log(`  ✅ Products: ${products.length} found`);
+
+      const heroImageUrl = products.length > 0 ? products[0].image : null;
+      if (heroImageUrl) console.log(`  ✅ Hero: product image from collection`);
+
+      console.log(`  🤖 Generating article content...`);
+      const articleData = await generateArticle(topic, products);
+      const fullHtml = buildBodyHtml(articleData, products, topic.collection);
+
+      console.log(`  📤 Publishing to Shopify...`);
+      const article = await publishArticle(
+        topic.title, fullHtml, articleData.seo_title,
+        articleData.seo_description, articleData.tags, heroImageUrl
+      );
+
+      if (article?.id) {
+        console.log(`  ✅ Published! ID: ${article.id}`);
+        success++;
+      } else {
+        console.log(`  ❌ Failed:`, JSON.stringify(article));
+      }
+      await sleep(2000);
+    } catch (err) {
+      console.log(`  ❌ Error: ${err.message}`);
+    }
+  }
+
+  console.log(`\n=============================`);
+  console.log(`✅ Published: ${success}/${COUNT}`);
+  console.log(`=============================\n`);
+}
+
+main();
