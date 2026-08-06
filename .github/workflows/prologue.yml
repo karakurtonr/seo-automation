@@ -1,0 +1,24 @@
+name: Prologue Blog Automation
+
+on:
+  schedule:
+    - cron: '20 12 * * *'   # ~8:20 AM EDT
+    - cron: '20 18 * * *'   # ~2:20 PM EDT
+  workflow_dispatch:          # allows manual "Run workflow" button
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install
+      - name: Run Prologue blog automation
+        env:
+          PROLOGUE_STORE: ${{ secrets.PROLOGUE_STORE }}
+          PROLOGUE_CLIENT_ID: ${{ secrets.PROLOGUE_CLIENT_ID }}
+          PROLOGUE_CLIENT_SECRET: ${{ secrets.PROLOGUE_CLIENT_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node prologue_blog_automation.js 2
