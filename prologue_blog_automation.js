@@ -11,9 +11,9 @@ const ARTICLE_TOPICS = [
   { title: "How to Break In New Loafers Without the Pain", keyword: "loafers women", collection: "loafers" },
   { title: "The Best Women's Loafers to Wear With Jeans", keyword: "loafers with jeans women", collection: "loafers" },
 
-  { title: "How to Style Ankle Boots: 5 Outfits That Always Work", keyword: "ankle boots women", collection: "ankle-boots" },
-  { title: "Ankle Boots vs Chelsea Boots: What's the Difference?", keyword: "ankle boots women", collection: "ankle-boots" },
-  { title: "The Best Ankle Boots for Women in 2026", keyword: "ankle boots women 2026", collection: "ankle-boots" },
+  { title: "How to Style Ankle Boots: 5 Outfits That Always Work", keyword: "ankle boots women", collection: "ankle-boots-vegan-leather" },
+  { title: "Ankle Boots vs Chelsea Boots: What's the Difference?", keyword: "ankle boots women", collection: "ankle-boots-vegan-leather" },
+  { title: "The Best Ankle Boots for Women in 2026", keyword: "ankle boots women 2026", collection: "ankle-boots-vegan-leather" },
 
   { title: "Knee High Boots: The Complete Style Guide for Women", keyword: "knee high boots women", collection: "knee-high-boots" },
   { title: "How to Wear Knee High Boots With Every Outfit", keyword: "knee high boots women", collection: "knee-high-boots" },
@@ -22,35 +22,50 @@ const ARTICLE_TOPICS = [
   { title: "How to Style White Sneakers With Any Outfit", keyword: "white sneakers women", collection: "sneakers" },
   { title: "The Best Comfortable Sneakers for All-Day Wear", keyword: "comfortable sneakers women", collection: "sneakers" },
 
-  { title: "Pumps 101: How to Choose the Right Heel Height", keyword: "pumps women", collection: "pumps" },
-  { title: "How to Walk in Pumps Comfortably: A Practical Guide", keyword: "comfortable pumps women", collection: "pumps" },
-  { title: "The Best Black Pumps for Women: A Complete Guide", keyword: "black pumps women", collection: "pumps" },
+  { title: "Pumps 101: How to Choose the Right Heel Height", keyword: "pumps women", collection: "heels" },
+  { title: "How to Walk in Pumps Comfortably: A Practical Guide", keyword: "comfortable pumps women", collection: "heels" },
+  { title: "The Best Black Pumps for Women: A Complete Guide", keyword: "black pumps women", collection: "heels" },
 
   { title: "Slide Sandals: The Summer Essential You Need", keyword: "slide sandals women", collection: "sandals" },
   { title: "How to Style Sandals for Summer 2026", keyword: "sandals women summer", collection: "sandals" },
+  { title: "Wedge Sandals: The Most Comfortable Heel You Can Wear", keyword: "wedge sandals women", collection: "sandals" },
+  { title: "How to Style Wedges for Day and Night", keyword: "wedges women", collection: "sandals" },
 
-  { title: "Wedge Sandals: The Most Comfortable Heel You Can Wear", keyword: "wedge sandals women", collection: "wedges-and-sandals" },
-  { title: "How to Style Wedges for Day and Night", keyword: "wedges women", collection: "wedges-and-sandals" },
+  { title: "The Best Boots for Women This Season", keyword: "boots women", collection: "boots" },
+  { title: "How to Care for Your Boots So They Last for Years", keyword: "boot care women", collection: "boots" },
 
   { title: "Why Ballet Flats Are Having a Major Moment in 2026", keyword: "ballet flats women", collection: "flats" },
   { title: "How to Style Flats: From Office to Weekend", keyword: "flats women outfit", collection: "flats" },
   { title: "The Best Flats for Women Who Are on Their Feet All Day", keyword: "comfortable flats women", collection: "flats" },
-
-  { title: "Mary Jane Flats Are Back: How to Wear Them in 2026", keyword: "mary jane flats women", collection: "mary-jane-flats" },
+  { title: "Mary Jane Flats Are Back: How to Wear Them in 2026", keyword: "mary jane flats women", collection: "flats" },
 ];
 
 async function getCollectionProducts(collectionHandle) {
-  const res = await fetch(
+  // Try smart_collections first, then custom_collections
+  let collectionId = null;
+
+  const smartRes = await fetch(
     `https://${STORE}/admin/api/2024-01/smart_collections.json?handle=${collectionHandle}&fields=id,title,handle`,
     { headers: { 'X-Shopify-Access-Token': TOKEN } }
   );
-  const data = await res.json();
-  const collections = data.smart_collections || [];
-  if (collections.length === 0) {
-    console.log(`  ⚠️  Collection "${collectionHandle}" not found as smart_collection`);
+  const smartData = await smartRes.json();
+  if (smartData.smart_collections && smartData.smart_collections.length > 0) {
+    collectionId = smartData.smart_collections[0].id;
+  } else {
+    const customRes = await fetch(
+      `https://${STORE}/admin/api/2024-01/custom_collections.json?handle=${collectionHandle}&fields=id,title,handle`,
+      { headers: { 'X-Shopify-Access-Token': TOKEN } }
+    );
+    const customData = await customRes.json();
+    if (customData.custom_collections && customData.custom_collections.length > 0) {
+      collectionId = customData.custom_collections[0].id;
+    }
+  }
+
+  if (!collectionId) {
+    console.log(`  ⚠️  Collection "${collectionHandle}" not found (smart or custom)`);
     return [];
   }
-  const collectionId = collections[0].id;
 
   const prodRes = await fetch(
     `https://${STORE}/admin/api/2024-01/collections/${collectionId}/products.json?limit=20&fields=id,handle`,
