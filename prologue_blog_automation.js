@@ -1,32 +1,9 @@
 import fetch from 'node-fetch';
 
-const STORE = process.env.PROLOGUE_STORE;         // prologueshoes.myshopify.com
-const CLIENT_ID = process.env.PROLOGUE_CLIENT_ID;
-const CLIENT_SECRET = process.env.PROLOGUE_CLIENT_SECRET;
+const STORE = process.env.PROLOGUE_STORE;
+const TOKEN = process.env.PROLOGUE_TOKEN;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
-const BLOG_ID = '93033070707';                     // "The Edit" blog
-
-let TOKEN = null; // filled at runtime via client_credentials grant
-
-// Exchange client ID + secret for a fresh access token (valid ~24h)
-async function getAccessToken() {
-  const res = await fetch(`https://${STORE}/admin/oauth/access_token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      grant_type: 'client_credentials',
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-    }),
-  });
-  const data = await res.json();
-  if (!data.access_token) {
-    console.log('❌ Token exchange failed:', JSON.stringify(data));
-    throw new Error('Could not obtain access token from client credentials.');
-  }
-  console.log('🔑 Access token obtained.');
-  return data.access_token;
-}
+const BLOG_ID = '93033070707'; // "The Edit" blog
 
 const ARTICLE_TOPICS = [
   { title: "How to Style Women's Loafers for Every Occasion", keyword: "women's loafers", collection: "loafers" },
@@ -245,9 +222,6 @@ async function sleep(ms) {
 async function main() {
   const COUNT = parseInt(process.argv[2]) || 2;
   console.log(`\n🚀 Prologue Blog Automation — Publishing ${COUNT} article(s)\n`);
-
-  // Get a fresh access token before doing anything
-  TOKEN = await getAccessToken();
 
   const categories = [
     ARTICLE_TOPICS.filter(t => t.collection.includes('loafer')),
